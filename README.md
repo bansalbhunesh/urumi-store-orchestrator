@@ -8,7 +8,7 @@ This project implements a "Shopify-like" provisioning system where users can cre
 
 ## ✨ Key Features
 
-- **🚀 Instant Provisioning**: Launches WooCommerce (or Medusa) stores in seconds.
+- **🚀 Instant Provisioning**: Launches WooCommerce (Full Stack) or Medusa (Simulated/Lightweight) stores.
 - **🔒 Strong Isolation**: Each store runs in its own **Kubernetes Namespace** (`store-<uuid>`).
 - **🌐 Automatic Ingress**: Assigns unique URLs (e.g., `http://store-abc.localhost`) automatically.
 - **📦 Helm-Native**: Uses standard Helm charts for deployment, ensuring portability between Local (Kind) and Production (k3s).
