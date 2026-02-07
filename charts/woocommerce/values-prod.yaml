@@ -1,0 +1,17 @@
+# values-prod.yaml
+ingress:
+  enabled: true
+  className: "traefik" # k3s default
+  hosts:
+    - host: store.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+
+persistence:
+  storageClass: "local-path" # k3s default
+
+mariadb:
+  primary:
+    persistence:
+      storageClass: "local-path"

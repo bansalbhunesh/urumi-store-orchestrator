@@ -1,0 +1,18 @@
+# values-local.yaml
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: store.localhost
+      paths:
+        - path: /
+          pathType: Prefix
+
+# In Kind, standard storage class is usually default.
+persistence:
+  storageClass: "standard"
+
+mariadb:
+  primary:
+    persistence:
+      storageClass: "standard"
