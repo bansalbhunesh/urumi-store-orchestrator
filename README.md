@@ -36,16 +36,15 @@ kind create cluster --config kind-config.yaml --name urumi-cluster
 kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/kind/deploy.yaml
 ```
 
-### 2. Start the Backend (Orchestrator)
-The backend listens on `:8080`.
-```bash
-cd backend
-go mod tidy
-# Run the server
-go run .
-# Or build and run
-# go build -o orchestrator.exe && .\orchestrator.exe
+### 1. One-Click Start (Windows)
+Run the helper script to launch both Backend and Frontend:
+```powershell
+.\start-all.ps1
 ```
+
+### 2. Manual Start
+#### Backend
+
 
 ### 3. Start the Dashboard
 The frontend runs on `:5173`.
