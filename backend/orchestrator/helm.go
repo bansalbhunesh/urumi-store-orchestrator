@@ -2,7 +2,9 @@ package orchestrator
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"urumi-backend/models"
 )
 
@@ -27,7 +29,16 @@ func ProvisionStore(store models.Store) error {
 
 	releaseName := store.Namespace
 
+	// Get KUBECONFIG from env or use default
+	kubeconfig := os.Getenv("KUBECONFIG")
+	if kubeconfig == "" {
+		// Fallback to default location if not set, but better to be explicit in our setup
+		home, _ := os.UserHomeDir()
+		kubeconfig = filepath.Join(home, ".kube", "config")
+	}
+
 	cmd := exec.Command("helm", "upgrade", "--install", releaseName, chartPath,
+		"--kubeconfig", kubeconfig,
 		"--namespace", store.Namespace,
 		"--create-namespace",
 		"--values", valuesFile,
@@ -46,7 +57,14 @@ func ProvisionStore(store models.Store) error {
 
 // DeleteStore runs the helm uninstall command
 func DeleteStore(store models.Store) error {
-	cmd := exec.Command("helm", "uninstall", store.Namespace, "--namespace", store.Namespace)
+	// Get KUBECONFIG
+	kubeconfig := os.Getenv("KUBECONFIG")
+	if kubeconfig == "" {
+		home, _ := os.UserHomeDir()
+		kubeconfig = filepath.Join(home, ".kube", "config")
+	}
+
+	cmd := exec.Command("helm", "uninstall", store.Namespace, "--namespace", store.Namespace, "--kubeconfig", kubeconfig)
 
 	// Also delete namespace? helm uninstall doesn't delete namespace usually.
 	// Let's delete the namespace directly.
@@ -57,7 +75,7 @@ func DeleteStore(store models.Store) error {
 		// continue to try deleting namespace
 	}
 
-	cmdNs := exec.Command("kubectl", "delete", "namespace", store.Namespace)
+	cmdNs := exec.Command("kubectl", "delete", "namespace", store.Namespace, "--kubeconfig", kubeconfig)
 	outputNs, errNs := cmdNs.CombinedOutput()
 	if errNs != nil {
 		fmt.Printf("Error deleting namespace %s: %s\nOutput: %s\n", store.Namespace, errNs, string(outputNs))

@@ -84,6 +84,8 @@ wordpress:
 
 # MariaDB Dependency Configuration
 mariadb:
+  image:
+    tag: latest
   enabled: true
   auth:
     rootPassword: "rootpassword123"

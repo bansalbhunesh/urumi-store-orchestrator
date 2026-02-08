@@ -25,3 +25,10 @@ backend/*.exe
 # OS
 .DS_Store
 Thumbs.db
+
+# Kubernetes
+kubeconfig.yaml
+ingress-nginx.yaml
+
+# Helm
+charts/woocommerce/charts/

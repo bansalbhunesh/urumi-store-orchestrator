@@ -45,6 +45,14 @@ spec:
               value: {{ .Values.mariadb.auth.database | quote }}
             - name: WORDPRESS_DEBUG
               value: "1"
+            - name: WORDPRESS_BLOG_NAME
+              value: {{ .Values.wordpress.blogName | quote }}
+            - name: WORDPRESS_ADMIN_USER
+              value: {{ .Values.wordpress.username | quote }}
+            - name: WORDPRESS_ADMIN_PASSWORD
+              value: {{ .Values.wordpress.password | quote }}
+            - name: WORDPRESS_ADMIN_EMAIL
+              value: {{ .Values.wordpress.email | quote }}
           volumeMounts:
             - name: wordpress-data
               mountPath: /var/www/html

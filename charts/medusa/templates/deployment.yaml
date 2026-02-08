@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "woocommerce.fullname" . }}
+  name: {{ include "medusa.fullname" . }}
   labels:
-    {{- include "woocommerce.labels" . | nindent 4 }}
+    {{- include "medusa.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      {{- include "woocommerce.selectorLabels" . | nindent 6 }}
+      {{- include "medusa.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "woocommerce.selectorLabels" . | nindent 8 }}
+        {{- include "medusa.selectorLabels" . | nindent 8 }}
     spec:
       containers:
         - name: medusa
