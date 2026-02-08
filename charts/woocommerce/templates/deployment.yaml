@@ -49,10 +49,34 @@ spec:
               value: {{ .Values.wordpress.blogName | quote }}
             - name: WORDPRESS_ADMIN_USER
               value: {{ .Values.wordpress.username | quote }}
-            - name: WORDPRESS_ADMIN_PASSWORD
-              value: {{ .Values.wordpress.password | quote }}
             - name: WORDPRESS_ADMIN_EMAIL
               value: {{ .Values.wordpress.email | quote }}
+            - name: WORDPRESS_SITE_URL
+              value: "http://{{ (index .Values.ingress.hosts 0).host }}"
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - |
+                    # Install WP-CLI
+                    if [ ! -f /usr/local/bin/wp ]; then
+                      curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+                      chmod +x wp-cli.phar
+                      mv wp-cli.phar /usr/local/bin/wp
+                    fi
+
+                    # Wait for DB
+                    sleep 10
+
+                    # Install WordPress Core if needed
+                    if ! wp core is-installed --allow-root --path=/var/www/html; then
+                      wp core install --url="$WORDPRESS_SITE_URL" --title="$WORDPRESS_BLOG_NAME" --admin_user="$WORDPRESS_ADMIN_USER" --admin_password="$WORDPRESS_ADMIN_PASSWORD" --admin_email="$WORDPRESS_ADMIN_EMAIL" --allow-root --path=/var/www/html
+                    fi
+
+                    # Install WooCommerce
+                    wp plugin install woocommerce --activate --allow-root --path=/var/www/html
           volumeMounts:
             - name: wordpress-data
               mountPath: /var/www/html
