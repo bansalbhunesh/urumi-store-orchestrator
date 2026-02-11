@@ -1,0 +1,117 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "woocommerce-store.fullname" . }}-setup
+  labels:
+    {{- include "woocommerce-store.labels" . | nindent 4 }}
+data:
+  setup-store.sh: |
+    #!/bin/bash
+    set -e
+
+    echo "Waiting for WordPress to be ready..."
+    until $(curl --output /dev/null --silent --head --fail http://localhost:80); do
+      printf '.'
+      sleep 5
+    done
+
+    echo "WordPress is up. Starting provisioning..."
+
+    # Define paths
+    WP_PATH="/var/www/html"
+
+    # 1. Install WP-CLI if not exists
+    if ! command -v wp &> /dev/null; then
+        echo "Installing WP-CLI..."
+        curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+        chmod +x wp-cli.phar
+        mv wp-cli.phar /usr/local/bin/wp
+    fi
+
+    # 2. Check if already provisioned
+    STATUS=$(wp core is-installed --path=$WP_PATH --allow-root 2>&1 || true)
+    
+    if [[ "$?" -ne 0 ]] || [[ "$STATUS" != "" ]]; then
+      # If exit code is not 0, or output is empty/error, assume not installed.
+      # Actually 'wp core is-installed' returns 0 if installed, 1 if not.
+      echo "WordPress not fully installed."
+      IS_FRESH=true
+    elif [ "$(wp post list --post_type=product --format=count --path=$WP_PATH --allow-root)" -eq "0" ]; then
+      echo "WordPress installed but not seeded."
+      IS_FRESH=true
+    else
+      IS_FRESH=false
+    fi
+
+    if [ "$IS_FRESH" = true ]; then
+      echo "Fresh installation detected. Installing WordPress Core & WooCommerce..."
+      
+      # 3. Core Install (Bypasses the "Welcome" screen)
+      if ! wp core is-installed --path=$WP_PATH --allow-root; then
+          echo "Installing WordPress Core..."
+          wp core install \
+            --url="$WORDPRESS_SITE_URL" \
+            --title="$WORDPRESS_BLOG_NAME" \
+            --admin_user="$WORDPRESS_ADMIN_USER" \
+            --admin_password="$WORDPRESS_DB_PASSWORD" \
+            --admin_email="$WORDPRESS_ADMIN_EMAIL" \
+            --path=$WP_PATH \
+            --allow-root
+      fi
+
+      # Install and Activate WooCommerce
+      wp plugin install woocommerce --activate --path=$WP_PATH --allow-root
+      wp theme install storefront --activate --path=$WP_PATH --allow-root
+
+      # Create default pages (Shop, Cart, Checkout, My Account)
+      echo "Creating WooCommerce pages..."
+      wp wc tool run install_pages --user=1 --path=$WP_PATH --allow-root
+
+      # Set Homepage to Shop
+      echo "Setting Homepage to Shop..."
+      SHOP_PAGE_ID=$(wp post list --post_type=page --post_status=publish --posts_per_page=1 --pagename=shop --field=ID --path=$WP_PATH --allow-root)
+      wp option update show_on_front page --path=$WP_PATH --allow-root
+      wp option update page_on_front $SHOP_PAGE_ID --path=$WP_PATH --allow-root
+
+      # Configure WooCommerce Basic Settings
+      echo "Configuring WooCommerce..."
+      wp option update woocommerce_store_address "123 Tech Street" --path=$WP_PATH --allow-root
+      wp option update woocommerce_store_city "San Francisco" --path=$WP_PATH --allow-root
+      wp option update woocommerce_store_postcode "94105" --path=$WP_PATH --allow-root
+      wp option update woocommerce_currency "USD" --path=$WP_PATH --allow-root
+      wp option update woocommerce_product_type_virtual "no" --path=$WP_PATH --allow-root
+
+      # Create Dummy Products
+      echo "Seeding Products..."
+      
+      # Product 1: Urumi T-Shirt
+      wp wc product create \
+        --name="Urumi Developer T-Shirt" \
+        --type=simple \
+        --regular_price=25.00 \
+        --description="The official t-shirt for Urumi Orchestrator developers. 100% Cotton." \
+        --short_description="Code in comfort." \
+        --categories='[{"id": 1}]' \
+        --images='[{"src": "https://raw.githubusercontent.com/urumi-ai/assets/main/tshirt.jpg"}]' \
+        --user=1 \
+        --path=$WP_PATH \
+        --allow-root
+
+      # Product 2: Kubernetes Hoodie
+      wp wc product create \
+        --name="K8s Master Hoodie" \
+        --type=simple \
+        --regular_price=49.99 \
+        --description="Stay warm while debugging your clusters." \
+        --short_description="Essential for late night deployments." \
+        --user=1 \
+        --path=$WP_PATH \
+        --allow-root
+
+      echo "Seeding completed!"
+    else
+      echo "Store already provisioned. Skipping seeding."
+    fi
+
+    # Keep container running? No, this is a sidecar or we run in background. 
+    # Actually, we will run this in background of main container.

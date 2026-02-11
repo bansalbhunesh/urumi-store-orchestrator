@@ -24,12 +24,35 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-db
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - /bin/bash
+            - -c
+            - |
+              echo "<?php" > /tmp/check_db.php
+              echo "\$host = '{{ .Release.Name }}-mariadb';" >> /tmp/check_db.php
+              echo "\$user = 'root';" >> /tmp/check_db.php
+              echo "\$pass = '{{ .Values.mariadb.auth.rootPassword }}';" >> /tmp/check_db.php
+              echo "\$conn = @new mysqli(\$host, \$user, \$pass, '', 3306);" >> /tmp/check_db.php
+              echo "if (\$conn->connect_error) { fwrite(STDERR, 'Failed: ' . \$conn->connect_error . PHP_EOL); exit(1); }" >> /tmp/check_db.php
+              echo "echo 'Connected'; " >> /tmp/check_db.php
+              
+              until php /tmp/check_db.php; do
+                echo "Waiting for MariaDB..."
+                sleep 2
+              done
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Override command to run setup script in background
+          command: ["/bin/bash", "-c"]
+          args: ["cp /tmp/setup/setup-store.sh /usr/local/bin/setup-store.sh && chmod +x /usr/local/bin/setup-store.sh && /usr/local/bin/setup-store.sh > /proc/1/fd/1 2>/proc/1/fd/2 & docker-entrypoint.sh apache2-foreground"]
           ports:
             - name: http
               containerPort: 80
@@ -53,39 +76,21 @@ spec:
               value: {{ .Values.wordpress.email | quote }}
             - name: WORDPRESS_SITE_URL
               value: "http://{{ (index .Values.ingress.hosts 0).host }}"
-          lifecycle:
-            postStart:
-              exec:
-                command:
-                  - /bin/bash
-                  - -c
-                  - |
-                    # Install WP-CLI
-                    if [ ! -f /usr/local/bin/wp ]; then
-                      curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-                      chmod +x wp-cli.phar
-                      mv wp-cli.phar /usr/local/bin/wp
-                    fi
-
-                    # Wait for DB
-                    sleep 10
-
-                    # Install WordPress Core if needed
-                    if ! wp core is-installed --allow-root --path=/var/www/html; then
-                      wp core install --url="$WORDPRESS_SITE_URL" --title="$WORDPRESS_BLOG_NAME" --admin_user="$WORDPRESS_ADMIN_USER" --admin_password="$WORDPRESS_ADMIN_PASSWORD" --admin_email="$WORDPRESS_ADMIN_EMAIL" --allow-root --path=/var/www/html
-                    fi
-
-                    # Install WooCommerce
-                    wp plugin install woocommerce --activate --allow-root --path=/var/www/html
           volumeMounts:
             - name: wordpress-data
               mountPath: /var/www/html
+            - name: setup-script
+              mountPath: /tmp/setup
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
         - name: wordpress-data
           persistentVolumeClaim:
             claimName: {{ include "woocommerce-store.fullname" . }}
+        - name: setup-script
+          configMap:
+            name: {{ include "woocommerce-store.fullname" . }}-setup
+            defaultMode: 0755
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
