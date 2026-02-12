@@ -144,7 +144,7 @@ data:
           --catalog_visibility=visible \
           --description="The official t-shirt for Urumi Orchestrator developers. 100% Cotton." \
           --short_description="Code in comfort." \
-          --categories="[{\"id\": $CLOTHING_CAT_ID}]" \
+          --categories="[{\"id\": ${CLOTHING_CAT_ID:-0}}]" \
           --images='[{"src":"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80"}]' \
           --attributes='[{"name":"Size","visible":true,"variation":true,"options":["S","M","L","XL"]}]' \
           --user=1 \
@@ -175,7 +175,7 @@ data:
           --catalog_visibility=visible \
           --regular_price=49.99 \
           --description="Stay warm while debugging your clusters." \
-          --categories="[{\"id\": $CLOTHING_CAT_ID}]" \
+          --categories="[{\"id\": ${CLOTHING_CAT_ID:-0}}]" \
           --images='[{"src":"https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80"}]' \
           --manage_stock=true \
           --stock_quantity=50 \
@@ -196,7 +196,7 @@ data:
           --catalog_visibility=visible \
           --regular_price=5.00 \
           --description="Laptop stickers for cloud natives." \
-          --categories="[{\"id\": $ACCESSORIES_CAT_ID}]" \
+          --categories="[{\"id\": ${ACCESSORIES_CAT_ID:-0}}]" \
           --images='[{"src":"https://images.unsplash.com/photo-1589384267710-1a858f2af0c9?auto=format&fit=crop&w=800&q=80"}]' \
           --manage_stock=true \
           --stock_quantity=500 \
@@ -217,7 +217,7 @@ data:
           --catalog_visibility=visible \
           --regular_price=12.00 \
           --description="Fuel for your coding sessions." \
-          --categories="[{\"id\": $ACCESSORIES_CAT_ID}]" \
+          --categories="[{\"id\": ${ACCESSORIES_CAT_ID:-0}}]" \
           --images='[{"src":"https://images.unsplash.com/photo-1517260739337-6799d2d040ea?auto=format&fit=crop&w=800&q=80"}]' \
           --manage_stock=true \
           --stock_quantity=200 \

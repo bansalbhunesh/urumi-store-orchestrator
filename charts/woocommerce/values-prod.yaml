@@ -21,6 +21,8 @@ mariadb:
   primary:
     persistence:
       storageClass: "local-path"
+      enabled: true
+      size: 8Gi
   auth:
     # These will be overridden by the orchestrator
     rootPassword: ""
