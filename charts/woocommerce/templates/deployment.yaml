@@ -44,19 +44,37 @@ spec:
                 echo "Waiting for MariaDB..."
                 sleep 2
               done
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          # Override command to run setup script in background
-          command: ["/bin/bash", "-c"]
-          args: ["cp /tmp/setup/setup-store.sh /usr/local/bin/setup-store.sh && chmod +x /usr/local/bin/setup-store.sh && /usr/local/bin/setup-store.sh > /proc/1/fd/1 2>/proc/1/fd/2 & docker-entrypoint.sh apache2-foreground"]
           ports:
             - name: http
               containerPort: 80
               protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
           env:
             - name: WORDPRESS_DB_HOST
               value: {{ .Release.Name }}-mariadb
@@ -83,6 +101,46 @@ spec:
               mountPath: /tmp/setup
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+
+        # Sidecar Container for Provisioning
+        - name: provisioner
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Run setup script and then sleep forever (to keep container alive but idle)
+          # We copy to /usr/local/bin to ensure execution permissions
+          command: ["/bin/bash", "-c"]
+          args: ["cp /tmp/setup/setup-store.sh /usr/local/bin/setup-store.sh && chmod +x /usr/local/bin/setup-store.sh && /usr/local/bin/setup-store.sh && echo 'Provisioning Complete. Sleeping...' && sleep infinity"]
+          env:
+            - name: WORDPRESS_DB_HOST
+              value: {{ .Release.Name }}-mariadb
+            - name: WORDPRESS_DB_USER
+              value: {{ .Values.mariadb.auth.username | quote }}
+            - name: WORDPRESS_DB_PASSWORD
+              value: {{ .Values.mariadb.auth.password | quote }}
+            - name: WORDPRESS_DB_NAME
+              value: {{ .Values.mariadb.auth.database | quote }}
+            - name: WORDPRESS_ADMIN_USER
+              value: {{ .Values.wordpress.username | quote }}
+            # - name: WORDPRESS_DB_PASSWORD # Reusing for admin pass in script
+            #   value: {{ .Values.mariadb.auth.password | quote }}
+            - name: WORDPRESS_ADMIN_EMAIL
+              value: {{ .Values.wordpress.email | quote }}
+            - name: WORDPRESS_SITE_URL
+              value: "http://{{ (index .Values.ingress.hosts 0).host }}"
+            - name: WORDPRESS_BLOG_NAME
+              value: {{ .Values.wordpress.blogName | quote }}
+          volumeMounts:
+            - name: wordpress-data
+              mountPath: /var/www/html
+            - name: setup-script
+              mountPath: /tmp/setup
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
       volumes:
         - name: wordpress-data
           persistentVolumeClaim:

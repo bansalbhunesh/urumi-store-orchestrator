@@ -30,88 +30,237 @@ data:
 
     # 2. Check if already provisioned
     STATUS=$(wp core is-installed --path=$WP_PATH --allow-root 2>&1 || true)
-    
-    if [[ "$?" -ne 0 ]] || [[ "$STATUS" != "" ]]; then
-      # If exit code is not 0, or output is empty/error, assume not installed.
-      # Actually 'wp core is-installed' returns 0 if installed, 1 if not.
-      echo "WordPress not fully installed."
-      IS_FRESH=true
-    elif [ "$(wp post list --post_type=product --format=count --path=$WP_PATH --allow-root)" -eq "0" ]; then
-      echo "WordPress installed but not seeded."
-      IS_FRESH=true
+    # Install WordPress if not installed
+    if ! $(wp core is-installed --path=$WP_PATH --allow-root 2>/dev/null); then
+        echo "Installing WordPress..."
+        wp core install \
+          --url="$WORDPRESS_SITE_URL" \
+          --title="$WORDPRESS_BLOG_NAME" \
+          --admin_user="$WORDPRESS_ADMIN_USER" \
+          --admin_password="$WORDPRESS_DB_PASSWORD" \
+          --admin_email="$WORDPRESS_ADMIN_EMAIL" \
+          --path=$WP_PATH \
+          --allow-root
     else
-      IS_FRESH=false
+        echo "WordPress Core already installed."
     fi
 
-    if [ "$IS_FRESH" = true ]; then
-      echo "Fresh installation detected. Installing WordPress Core & WooCommerce..."
+    # Install WooCommerce
+    if ! $(wp plugin is-installed woocommerce --path=$WP_PATH --allow-root); then
+        echo "Installing WooCommerce..."
+        wp plugin install woocommerce --activate --path=$WP_PATH --allow-root
+    else
+        echo "WooCommerce already installed."
+        wp plugin activate woocommerce --path=$WP_PATH --allow-root
+    fi
+
+    # Install Storefront Theme
+    if ! $(wp theme is-installed storefront --path=$WP_PATH --allow-root); then
+        echo "Installing Storefront..."
+        wp theme install storefront --activate --path=$WP_PATH --allow-root
+    else
+        echo "Storefront already installed."
+        wp theme activate storefront --path=$WP_PATH --allow-root
+    fi
       
-      # 3. Core Install (Bypasses the "Welcome" screen)
-      if ! wp core is-installed --path=$WP_PATH --allow-root; then
-          echo "Installing WordPress Core..."
-          wp core install \
-            --url="$WORDPRESS_SITE_URL" \
-            --title="$WORDPRESS_BLOG_NAME" \
-            --admin_user="$WORDPRESS_ADMIN_USER" \
-            --admin_password="$WORDPRESS_DB_PASSWORD" \
-            --admin_email="$WORDPRESS_ADMIN_EMAIL" \
-            --path=$WP_PATH \
-            --allow-root
+    # Create default pages (Shop, Cart, Checkout, My Account)
+    echo "Ensuring WooCommerce pages..."
+    # This command is safe to run multiple times, it only creates missing pages
+    wp wc tool run install_pages --user=1 --path=$WP_PATH --allow-root || true
+    
+    # Create Custom Home Page with Hero and Products
+    echo "Creating Custom Home Page..."
+    HOME_PAGE_ID=$(wp post list --post_type=page --name='home' --format=ids --path=$WP_PATH --allow-root)
+    
+    if [ -z "$HOME_PAGE_ID" ]; then
+        # HTML Content for Home Page (Read from mounted file)
+        HOME_CONTENT=$(cat /tmp/setup/home-content.html)
+
+        HOME_PAGE_ID=$(wp post create --post_type=page --post_title='Home' --post_status=publish --post_content="$HOME_CONTENT" --porcelain --path=$WP_PATH --allow-root)
+        echo "Created Home Page ID: $HOME_PAGE_ID"
+    else
+        echo "Home Page already exists. Updating content..."
+        HOME_CONTENT=$(cat /tmp/setup/home-content.html)
+        wp post update $HOME_PAGE_ID --post_content="$HOME_CONTENT" --path=$WP_PATH --allow-root
+    fi
+
+    # Set Homepage to 'Home' page
+    echo "Setting Homepage to Home..."
+    if [ ! -z "$HOME_PAGE_ID" ]; then
+        wp option update show_on_front page --path=$WP_PATH --allow-root
+        wp option update page_on_front $HOME_PAGE_ID --path=$WP_PATH --allow-root
+    fi
+
+    # Config Options
+    echo "Configuring WooCommerce Options..."
+    wp option update woocommerce_store_address "123 Tech Street" --path=$WP_PATH --allow-root
+    wp option update woocommerce_store_city "San Francisco" --path=$WP_PATH --allow-root
+    wp option update woocommerce_store_postcode "94105" --path=$WP_PATH --allow-root
+    wp option update woocommerce_currency "USD" --path=$WP_PATH --allow-root
+    wp option update woocommerce_product_type_virtual "no" --path=$WP_PATH --allow-root
+
+    # Enable User Registration
+    wp option update woocommerce_enable_myaccount_registration "yes" --path=$WP_PATH --allow-root
+    wp option update woocommerce_enable_signup_and_login_from_checkout "yes" --path=$WP_PATH --allow-root
+
+    # Enable Payment Gateways (Cash on Delivery & Check)
+    wp plugin install cod-woocommerce --activate --path=$WP_PATH --allow-root || true 
+    # Enable COD and Cheque options
+    wp option update woocommerce_cod_settings '{"enabled":"yes","title":"Cash on delivery","description":"Pay with cash upon delivery.","enable_for_methods":[],"enable_for_virtual":"yes"}' --format=json --path=$WP_PATH --allow-root
+    wp option update woocommerce_cheque_settings '{"enabled":"yes","title":"Check payments","description":"Pay by check."}' --format=json --path=$WP_PATH --allow-root
+    
+    # Active gateways list
+    wp option update woocommerce_gateway_order "cod,cheque" --path=$WP_PATH --allow-root
+
+      # Delete Sample Page
+      echo "Deleting Sample Page..."
+      SAMPLE_PAGE_ID=$(wp post list --post_type=page --name="sample-page" --format=ids --path=$WP_PATH --allow-root)
+      if [ ! -z "$SAMPLE_PAGE_ID" ]; then
+        wp post delete $SAMPLE_PAGE_ID --force --path=$WP_PATH --allow-root
+        echo "Sample page deleted."
+      else
+        echo "Sample page already deleted."
       fi
 
-      # Install and Activate WooCommerce
-      wp plugin install woocommerce --activate --path=$WP_PATH --allow-root
-      wp theme install storefront --activate --path=$WP_PATH --allow-root
+      # Seeding Products (Check if they exist first to avoid duplicates)
+    # Create Categories
+    echo "Creating Categories..."
+    wp wc product_cat create --name="Clothing" --slug="clothing" --path=$WP_PATH --allow-root || true
+    CLOTHING_CAT_ID=$(wp wc product_cat list --search="Clothing" --format=ids --fields=id --permission=read --path=$WP_PATH --allow-root | head -n 1)
+    
+    wp wc product_cat create --name="Accessories" --slug="accessories" --path=$WP_PATH --allow-root || true
+    ACCESSORIES_CAT_ID=$(wp wc product_cat list --search="Accessories" --format=ids --fields=id --permission=read --path=$WP_PATH --allow-root | head -n 1)
 
-      # Create default pages (Shop, Cart, Checkout, My Account)
-      echo "Creating WooCommerce pages..."
-      wp wc tool run install_pages --user=1 --path=$WP_PATH --allow-root
-
-      # Set Homepage to Shop
-      echo "Setting Homepage to Shop..."
-      SHOP_PAGE_ID=$(wp post list --post_type=page --post_status=publish --posts_per_page=1 --pagename=shop --field=ID --path=$WP_PATH --allow-root)
-      wp option update show_on_front page --path=$WP_PATH --allow-root
-      wp option update page_on_front $SHOP_PAGE_ID --path=$WP_PATH --allow-root
-
-      # Configure WooCommerce Basic Settings
-      echo "Configuring WooCommerce..."
-      wp option update woocommerce_store_address "123 Tech Street" --path=$WP_PATH --allow-root
-      wp option update woocommerce_store_city "San Francisco" --path=$WP_PATH --allow-root
-      wp option update woocommerce_store_postcode "94105" --path=$WP_PATH --allow-root
-      wp option update woocommerce_currency "USD" --path=$WP_PATH --allow-root
-      wp option update woocommerce_product_type_virtual "no" --path=$WP_PATH --allow-root
-
-      # Create Dummy Products
-      echo "Seeding Products..."
-      
-      # Product 1: Urumi T-Shirt
-      wp wc product create \
-        --name="Urumi Developer T-Shirt" \
-        --type=simple \
-        --regular_price=25.00 \
-        --description="The official t-shirt for Urumi Orchestrator developers. 100% Cotton." \
-        --short_description="Code in comfort." \
-        --categories='[{"id": 1}]' \
-        --images='[{"src": "https://raw.githubusercontent.com/urumi-ai/assets/main/tshirt.jpg"}]' \
-        --user=1 \
-        --path=$WP_PATH \
-        --allow-root
-
-      # Product 2: Kubernetes Hoodie
-      wp wc product create \
-        --name="K8s Master Hoodie" \
-        --type=simple \
-        --regular_price=49.99 \
-        --description="Stay warm while debugging your clusters." \
-        --short_description="Essential for late night deployments." \
-        --user=1 \
-        --path=$WP_PATH \
-        --allow-root
-
-      echo "Seeding completed!"
+    echo "Seeding Products with Images & Variations..."
+    
+    # Product 1: Urumi Developer T-Shirt (Variable Product)
+    if [ -z "$(wp post list --post_type=product --name='urumi-developer-t-shirt' --format=ids --path=$WP_PATH --allow-root)" ]; then
+        echo "Creating T-Shirt (Variable)..."
+        # 1. Create Variable Product Parent
+        TSHIRT_ID=$(wp wc product create \
+          --name="Urumi Developer T-Shirt" \
+          --type=variable \
+          --status=publish \
+          --catalog_visibility=visible \
+          --description="The official t-shirt for Urumi Orchestrator developers. 100% Cotton." \
+          --short_description="Code in comfort." \
+          --categories="[{\"id\": $CLOTHING_CAT_ID}]" \
+          --images='[{"src":"https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80"}]' \
+          --attributes='[{"name":"Size","visible":true,"variation":true,"options":["S","M","L","XL"]}]' \
+          --user=1 \
+          --porcelain \
+          --path=$WP_PATH \
+          --allow-root)
+        
+        # 2. Create Variations
+        # Size S
+        wp wc product_variation create $TSHIRT_ID --attributes='[{"name":"Size","option":"S"}]' --regular_price=25.00 --manage_stock=true --stock_quantity=20 --path=$WP_PATH --allow-root
+        # Size M
+        wp wc product_variation create $TSHIRT_ID --attributes='[{"name":"Size","option":"M"}]' --regular_price=25.00 --manage_stock=true --stock_quantity=30 --path=$WP_PATH --allow-root
+        # Size L
+        wp wc product_variation create $TSHIRT_ID --attributes='[{"name":"Size","option":"L"}]' --regular_price=25.00 --manage_stock=true --stock_quantity=30 --path=$WP_PATH --allow-root
+        # Size XL
+        wp wc product_variation create $TSHIRT_ID --attributes='[{"name":"Size","option":"XL"}]' --regular_price=27.00 --manage_stock=true --stock_quantity=20 --path=$WP_PATH --allow-root
     else
-      echo "Store already provisioned. Skipping seeding."
+        echo "T-Shirt already exists."
     fi
+
+    # Product 2: Hoodie (Simple)
+    if [ -z "$(wp post list --post_type=product --name='k8s-master-hoodie' --format=ids --path=$WP_PATH --allow-root)" ]; then
+        echo "Creating Hoodie..."
+        wp wc product create \
+          --name="K8s Master Hoodie" \
+          --type=simple \
+          --status=publish \
+          --catalog_visibility=visible \
+          --regular_price=49.99 \
+          --description="Stay warm while debugging your clusters." \
+          --categories="[{\"id\": $CLOTHING_CAT_ID}]" \
+          --images='[{"src":"https://images.unsplash.com/photo-1556905055-8f358a7a47b2?auto=format&fit=crop&w=800&q=80"}]' \
+          --manage_stock=true \
+          --stock_quantity=50 \
+          --user=1 \
+          --path=$WP_PATH \
+          --allow-root
+    else
+        echo "Hoodie already exists."
+    fi
+
+    # Product 3: Sticker Pack
+    if [ -z "$(wp post list --post_type=product --name='urumi-sticker-pack' --format=ids --path=$WP_PATH --allow-root)" ]; then
+        echo "Creating Sticker Pack..."
+        wp wc product create \
+          --name="Urumi Sticker Pack" \
+          --type=simple \
+          --status=publish \
+          --catalog_visibility=visible \
+          --regular_price=5.00 \
+          --description="Laptop stickers for cloud natives." \
+          --categories="[{\"id\": $ACCESSORIES_CAT_ID}]" \
+          --images='[{"src":"https://images.unsplash.com/photo-1589384267710-1a858f2af0c9?auto=format&fit=crop&w=800&q=80"}]' \
+          --manage_stock=true \
+          --stock_quantity=500 \
+          --user=1 \
+          --path=$WP_PATH \
+          --allow-root
+    else
+        echo "Stickers already exist."
+    fi
+
+    # Product 4: Coffee Mug
+    if [ -z "$(wp post list --post_type=product --name='debug-mug' --format=ids --path=$WP_PATH --allow-root)" ]; then
+        echo "Creating Debug Mug..."
+        wp wc product create \
+          --name="Debug Mug" \
+          --type=simple \
+          --status=publish \
+          --catalog_visibility=visible \
+          --regular_price=12.00 \
+          --description="Fuel for your coding sessions." \
+          --categories="[{\"id\": $ACCESSORIES_CAT_ID}]" \
+          --images='[{"src":"https://images.unsplash.com/photo-1517260739337-6799d2d040ea?auto=format&fit=crop&w=800&q=80"}]' \
+          --manage_stock=true \
+          --stock_quantity=200 \
+          --user=1 \
+          --path=$WP_PATH \
+          --allow-root
+    else
+        echo "Mug already exists."
+    fi
+
+    echo "Regenerating lookup tables..."
+    wp wc tool run recount_terms --user=1 --path=$WP_PATH --allow-root || true
+    
+    echo "Seeding completed!"
 
     # Keep container running? No, this is a sidecar or we run in background. 
     # Actually, we will run this in background of main container.
+
+  home-content.html: |
+    <!-- wp:cover {"url":"https://s.w.org/images/core/5.8/art-01.jpg","dimRatio":50,"overlayColor":"black","align":"full"} -->
+    <div class="wp-block-cover alignfull"><span aria-hidden="true" class="wp-block-cover__background has-black-background-color has-background-dim-50 has-background-dim"></span><img class="wp-block-cover__image-background" src="https://s.w.org/images/core/5.8/art-01.jpg" data-object-fit="cover"/><div class="wp-block-cover__inner-container"><!-- wp:heading {"textAlign":"center","textColor":"white","fontSize":"huge"} -->
+    <h2 class="has-text-align-center has-white-color has-text-color has-huge-font-size">Welcome to Urumi Store</h2>
+    <!-- /wp:heading -->
+
+    <!-- wp:paragraph {"align":"center","textColor":"white","fontSize":"large"} -->
+    <p class="has-text-align-center has-white-color has-text-color has-large-font-size">The best cloud-native merchandise.</p>
+    <!-- /wp:paragraph -->
+
+    <!-- wp:buttons {"layout":{"type":"flex","justifyContent":"center"}} -->
+    <div class="wp-block-buttons"><!-- wp:button {"className":"is-style-outline"} -->
+    <div class="wp-block-button is-style-outline"><a class="wp-block-button__link" href="/shop">Shop Now</a></div>
+    <!-- /wp:button --></div>
+    <!-- /wp:buttons --></div></div>
+    <!-- /wp:cover -->
+
+    <!-- wp:spacer {"height":40} -->
+    <div style="height:40px" aria-hidden="true" class="wp-block-spacer"></div>
+    <!-- /wp:spacer -->
+
+    <!-- wp:heading {"textAlign":"center"} -->
+    <h2 class="has-text-align-center">Featured Collection</h2>
+    <!-- /wp:heading -->
+
+    <!-- wp:shortcode -->
+    [products limit="4" columns="4" orderby="date" order="DESC"]
+    <!-- /wp:shortcode -->

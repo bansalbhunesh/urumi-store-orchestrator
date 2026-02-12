@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"os"
 	"time"
 	"urumi-backend/models"
 	"urumi-backend/orchestrator"
@@ -38,7 +39,11 @@ func (h *StoreHandler) CreateStore(c *gin.Context) {
 
 	storeID := uuid.New().String()
 	namespace := "store-" + storeID[:8]
-	
+
+	domainSuffix := os.Getenv("DOMAIN_SUFFIX")
+	if domainSuffix == "" {
+		domainSuffix = "localhost"
+	}
 	store := models.Store{
 		ID:        storeID,
 		Name:      input.Name,
@@ -46,7 +51,7 @@ func (h *StoreHandler) CreateStore(c *gin.Context) {
 		Status:    "Provisioning",
 		Namespace: namespace,
 		CreatedAt: time.Now(),
-		URL:       "http://" + namespace + ".localhost", // Simplistic for now
+		URL:       "http://" + namespace + "." + domainSuffix,
 	}
 
 	h.DB.Create(&store)
@@ -77,8 +82,8 @@ func (h *StoreHandler) DeleteStore(c *gin.Context) {
 		orchestrator.DeleteStore(s)
 		h.DB.Delete(&s) // Ideally delete after confirmation, but for immediate UI feedback:
 	}(store)
-	
-	// We delete from DB immediately for UI responsiveness in this simple demo, 
+
+	// We delete from DB immediately for UI responsiveness in this simple demo,
 	// or we could mark as "Deleting"
 	h.DB.Delete(&store)
 

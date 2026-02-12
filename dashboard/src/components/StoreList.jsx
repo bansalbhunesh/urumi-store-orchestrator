@@ -56,6 +56,15 @@ const StoreCard = ({ store, onDelete }) => {
                 </div>
             </div>
 
+            <div className="relative z-10 mb-4">
+                <p className="text-sm font-medium text-slate-400 mb-1">Products:</p>
+                <div className="text-sm text-white">
+                    {store.type === 'woocommerce' && store.status === 'Ready'
+                        ? '4 Products (T-Shirt, Hoodie, Mug, Stickers)'
+                        : '-'}
+                </div>
+            </div>
+
             <div className="mt-auto flex flex-col gap-3 relative z-10">
                 {store.status === 'Ready' && (
                     <a

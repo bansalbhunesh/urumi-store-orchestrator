@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,34 +17,72 @@ func ProvisionStore(store models.Store) error {
 	// Assuming running from backend/ directory
 	// Determine chart based on store type
 	var chartPath string
-	var valuesFile string
+	// Default values file, can be overridden by env
+	defaultValuesFile := "../charts/woocommerce/values-local.yaml"
+
+	kubeconfig := os.Getenv("KUBECONFIG")
+	if kubeconfig == "" {
+		home, _ := os.UserHomeDir()
+		kubeconfig = filepath.Join(home, ".kube", "config")
+	}
+
+	domainSuffix := os.Getenv("DOMAIN_SUFFIX")
+	if domainSuffix == "" {
+		domainSuffix = "localhost"
+	}
+
+	valuesFile := os.Getenv("HELM_VALUES_FILE")
 
 	switch store.Type {
 	case "medusa":
 		chartPath = "../charts/medusa"
-		valuesFile = "../charts/medusa/values-local.yaml"
+		if valuesFile == "" {
+			valuesFile = "../charts/medusa/values-local.yaml"
+		}
 	default:
 		chartPath = "../charts/woocommerce"
-		valuesFile = "../charts/woocommerce/values-local.yaml"
+		if valuesFile == "" {
+			valuesFile = defaultValuesFile
+		}
 	}
 
 	releaseName := store.Namespace
 
-	// Get KUBECONFIG from env or use default
-	kubeconfig := os.Getenv("KUBECONFIG")
-	if kubeconfig == "" {
-		// Fallback to default location if not set, but better to be explicit in our setup
-		home, _ := os.UserHomeDir()
-		kubeconfig = filepath.Join(home, ".kube", "config")
-	}
+	// Generate Random Passwords
+	rootPass := generatePassword(16)
+	dbPass := generatePassword(16)
+	// For demo purposes, we set a known admin password so the user can login
+	wpInternalPass := "password123"
+
+	host := fmt.Sprintf("%s.%s", store.Namespace, domainSuffix)
 
 	cmd := exec.Command("helm", "upgrade", "--install", releaseName, chartPath,
 		"--kubeconfig", kubeconfig,
 		"--namespace", store.Namespace,
 		"--create-namespace",
 		"--values", valuesFile,
-		"--set", fmt.Sprintf("ingress.hosts[0].host=%s.localhost", store.Namespace),
+		"--set", fmt.Sprintf("ingress.hosts[0].host=%s", host),
+		"--set", fmt.Sprintf("mariadb.auth.rootPassword=%s", rootPass),
+		"--set", fmt.Sprintf("mariadb.auth.password=%s", dbPass),
+		"--set", fmt.Sprintf("wordpress.db.password=%s", dbPass), // DB Connection pass
+		"--set", fmt.Sprintf("wordpress.password=%s", wpInternalPass), // Admin Panel pass
+		// woocommerce values.yaml:
+		// mariadb.auth.password
+		// mariadb.auth.rootPassword
+		// wordpress.password is NOT there, it uses env WORDPRESS_DB_PASSWORD from values.mariadb.auth.password
+		// But wait, the deployment.yaml uses:
+		// value: {{ .Values.mariadb.auth.password | quote }}
+		// So setting 'mariadb.auth.password' is enough for both DB and WordPress connection?
+		// Let's verify deployment.yaml env vars.
+		// WORDPRESS_DB_PASSWORD value: {{ .Values.mariadb.auth.password | quote }}
+		// Yes.
 	)
+
+	// We need to pass the DB password to the MariaDB chart AND the WordPress deployment.
+	// typically the wordpress chart depends on mariadb.
+	// If we set mariadb.auth.password, it updates the MariaDB chart.
+	// The WordPress deployment reads from .Values.mariadb.auth.password.
+	// So just setting mariadb.auth.password should work for both.
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -51,8 +90,18 @@ func ProvisionStore(store models.Store) error {
 		return err
 	}
 
-	fmt.Printf("Successfully provisioned store %s\n", store.ID)
+	fmt.Printf("Successfully provisioned store %s at %s\n", store.ID, host)
 	return nil
+}
+
+func generatePassword(length int) string {
+	// fast and dirty random string
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		b[i] = charset[rand.Intn(len(charset))]
+	}
+	return string(b)
 }
 
 // DeleteStore runs the helm uninstall command

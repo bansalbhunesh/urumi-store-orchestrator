@@ -1,0 +1,30 @@
+{{- if .Values.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "woocommerce-store.fullname" . }}
+  labels:
+    {{- include "woocommerce-store.labels" . | nindent 4 }}
+spec:
+  podSelector: {} # Select all pods in namespace
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic from Ingress Controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+    # Allow traffic between pods in same namespace (Web <-> DB)
+    - from:
+        - podSelector: {}
+  egress:
+    # Allow all egress (easier for downloading plugins, reaching DB, etc.)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+ {{- end }}

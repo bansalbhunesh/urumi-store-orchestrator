@@ -16,3 +16,8 @@ mariadb:
   primary:
     persistence:
       storageClass: "standard"
+
+image:
+  repository: wordpress
+  tag: latest
+  pullPolicy: IfNotPresent

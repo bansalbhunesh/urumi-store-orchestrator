@@ -78,7 +78,7 @@ persistence:
 
 wordpress:
   username: admin
-  password: "password123" # In prod, this should come from a secret
+  password: "password123" # Default dashboard password
   email: user@example.com
   blogName: "My WooCommerce Store"
 
@@ -88,11 +88,33 @@ mariadb:
     tag: latest
   enabled: true
   auth:
-    rootPassword: "rootpassword123"
+    # rootPassword: "rootpassword123" # Injected by backend
     database: wordpress
     username: wordpress
-    password: "wppassword123"
+    # password: "wppassword123" # Injected by backend
   primary:
     persistence:
       enabled: true
       size: 1Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+
+networkPolicy:
+  enabled: true
+
+resourceQuota:
+  enabled: true
+  pods: "10"
+  requests:
+    cpu: "1"
+    memory: "1Gi"
+    storage: "5Gi"
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+  pvc: "5"

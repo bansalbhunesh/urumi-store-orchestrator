@@ -1,0 +1,17 @@
+{{- if .Values.resourceQuota.enabled -}}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "woocommerce-store.fullname" . }}
+  labels:
+    {{- include "woocommerce-store.labels" . | nindent 4 }}
+spec:
+  hard:
+    pods: {{ .Values.resourceQuota.pods | default "10" | quote }}
+    requests.cpu: {{ .Values.resourceQuota.requests.cpu | default "1" | quote }}
+    requests.memory: {{ .Values.resourceQuota.requests.memory | default "1Gi" | quote }}
+    limits.cpu: {{ .Values.resourceQuota.limits.cpu | default "2" | quote }}
+    limits.memory: {{ .Values.resourceQuota.limits.memory | default "2Gi" | quote }}
+    persistentvolumeclaims: {{ .Values.resourceQuota.pvc | default "5" | quote }}
+    requests.storage: {{ .Values.resourceQuota.requests.storage | default "5Gi" | quote }}
+{{- end }}
