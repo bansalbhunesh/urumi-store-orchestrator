@@ -1,21 +1,29 @@
 import React, { useState } from 'react';
 import { X, Sparkles, Server } from 'lucide-react';
 
-export default function CreateStoreModal({ isOpen, onClose, onCreate }) {
+export default function CreateStoreModal({ isOpen, onClose, onCreate, isLoading }) {
     const [name, setName] = useState('');
     const [type, setType] = useState('woocommerce');
-    const [loading, setLoading] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
     if (!isOpen) return null;
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setLoading(true);
-        await onCreate({ name, type });
-        setLoading(false);
-        onClose();
-        setName('');
-        setType('woocommerce');
+        if (isSubmitting) return;
+        
+        setIsSubmitting(true);
+        try {
+            await onCreate({ name, type });
+            onClose();
+            setName('');
+            setType('woocommerce');
+        } catch (error) {
+            // Error is handled by parent component
+            console.error('Create store error:', error);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     return (
@@ -46,8 +54,11 @@ export default function CreateStoreModal({ isOpen, onClose, onCreate }) {
                             required
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 font-medium"
+                            disabled={isSubmitting}
+                            className="w-full bg-slate-950/50 border border-slate-700/50 rounded-xl px-4 py-3.5 text-white focus:outline-none focus:ring-2 focus:ring-violet-500/50 focus:border-violet-500 transition-all placeholder-slate-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                             placeholder="e.g. My Awesome Shop"
+                            minLength={2}
+                            maxLength={50}
                         />
                     </div>
 
@@ -56,7 +67,8 @@ export default function CreateStoreModal({ isOpen, onClose, onCreate }) {
                         <div className="grid grid-cols-2 gap-4">
                             <button
                                 type="button"
-                                className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-all duration-200 ${type === 'woocommerce' ? 'bg-violet-500/20 border-violet-500/50 text-white shadow-[0_0_15px_rgba(139,92,246,0.15)] scale-[1.02]' : 'bg-slate-900/40 border-slate-700/30 text-slate-400 hover:bg-slate-800/60 hover:border-slate-600'}`}
+                                disabled={isSubmitting}
+                                className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-all duration-200 ${type === 'woocommerce' ? 'bg-violet-500/20 border-violet-500/50 text-white shadow-[0_0_15px_rgba(139,92,246,0.15)] scale-[1.02]' : 'bg-slate-900/40 border-slate-700/30 text-slate-400 hover:bg-slate-800/60 hover:border-slate-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                                 onClick={() => setType('woocommerce')}
                             >
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${type === 'woocommerce' ? 'bg-violet-500' : 'bg-slate-800'}`}>
@@ -67,7 +79,8 @@ export default function CreateStoreModal({ isOpen, onClose, onCreate }) {
 
                             <button
                                 type="button"
-                                className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-all duration-200 ${type === 'medusa' ? 'bg-violet-500/20 border-violet-500/50 text-white shadow-[0_0_15px_rgba(139,92,246,0.15)] scale-[1.02]' : 'bg-slate-900/40 border-slate-700/30 text-slate-400 hover:bg-slate-800/60 hover:border-slate-600'}`}
+                                disabled={isSubmitting}
+                                className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-all duration-200 ${type === 'medusa' ? 'bg-violet-500/20 border-violet-500/50 text-white shadow-[0_0_15px_rgba(139,92,246,0.15)] scale-[1.02]' : 'bg-slate-900/40 border-slate-700/30 text-slate-400 hover:bg-slate-800/60 hover:border-slate-600'} disabled:opacity-50 disabled:cursor-not-allowed`}
                                 onClick={() => setType('medusa')}
                             >
                                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${type === 'medusa' ? 'bg-violet-500' : 'bg-slate-800'}`}>
@@ -80,10 +93,10 @@ export default function CreateStoreModal({ isOpen, onClose, onCreate }) {
 
                     <button
                         type="submit"
-                        disabled={loading}
+                        disabled={isSubmitting || isLoading || !name.trim()}
                         className="w-full py-4 rounded-xl bg-white hover:bg-slate-200 text-slate-950 font-bold shadow-lg shadow-white/5 transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 mt-2"
                     >
-                        {loading ? <Server className="w-4 h-4 animate-spin" /> : 'Launch Store'}
+                        {(isSubmitting || isLoading) ? <Server className="w-4 h-4 animate-spin" /> : 'Launch Store'}
                     </button>
                 </form>
             </div>

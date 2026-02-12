@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Plus, LayoutGrid, Github, Sparkles } from 'lucide-react';
+import { Plus, LayoutGrid, Github, Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
 import StoreList from './components/StoreList';
 import CreateStoreModal from './components/CreateStoreModal';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
     const [stores, setStores] = useState([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [error, setError] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
 
     const fetchStores = async () => {
         try {
+            setError(null);
             const response = await axios.get('/api/stores');
             setStores(response.data);
         } catch (error) {
             console.error('Error fetching stores:', error);
+            setError('Failed to fetch stores. Please check if the backend is running.');
             // Fallback for demo purposes if backend isn't reachable immediately
             if (stores.length === 0) setStores([]);
         }
@@ -27,26 +32,49 @@ function App() {
 
     const handleCreateStore = async (storeData) => {
         try {
+            setIsLoading(true);
+            setError(null);
             await axios.post('/api/stores', storeData);
             fetchStores(); // Refresh list immediately
         } catch (error) {
             console.error('Error creating store:', error);
-            alert('Failed to create store');
+            const errorMessage = error.response?.data?.error || 'Failed to create store';
+            setError(errorMessage);
+            throw error; // Re-throw to let modal know
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const handleDeleteStore = async (id) => {
         if (!confirm('Are you sure you want to delete this store?')) return;
         try {
+            setError(null);
             await axios.delete(`/api/stores/${id}`);
             fetchStores();
         } catch (error) {
             console.error('Error deleting store:', error);
+            const errorMessage = error.response?.data?.error || 'Failed to delete store';
+            setError(errorMessage);
         }
     };
 
     return (
-        <div className="min-h-screen selection:bg-violet-500/30">
+        <ErrorBoundary>
+            <div className="min-h-screen selection:bg-violet-500/30">
+                {/* Error Alert */}
+                {error && (
+                    <div className="sticky top-20 z-30 mx-6 mt-4 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 flex items-center gap-3 animate-fade-in-up">
+                        <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+                        <span className="flex-1">{error}</span>
+                        <button 
+                            onClick={() => setError(null)}
+                            className="p-1 rounded hover:bg-red-500/10 transition-colors"
+                        >
+                            ×
+                        </button>
+                    </div>
+                )}
             {/* Navbar */}
             <nav className="sticky top-0 z-40 w-full border-b border-white/5 bg-slate-950/60 backdrop-blur-xl supports-[backdrop-filter]:bg-slate-950/30">
                 <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -64,6 +92,14 @@ function App() {
                     </div>
 
                     <div className="flex items-center gap-4">
+                        <button
+                            onClick={fetchStores}
+                            disabled={isLoading}
+                            className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-all disabled:opacity-50"
+                            title="Refresh stores"
+                        >
+                            <RefreshCw className={`w-5 h-5 ${isLoading ? 'animate-spin' : ''}`} />
+                        </button>
                         <a href="https://github.com/urumi-ai" target="_blank" className="p-2 text-slate-400 hover:text-white hover:bg-white/5 rounded-full transition-all">
                             <Github className="w-5 h-5" />
                         </a>
@@ -100,7 +136,7 @@ function App() {
                 </div>
 
                 <div className="animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-                    <StoreList stores={stores} onDelete={handleDeleteStore} />
+                    <StoreList stores={stores} onDelete={handleDeleteStore} isLoading={isLoading} />
                 </div>
             </main>
 
@@ -108,8 +144,10 @@ function App() {
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
                 onCreate={handleCreateStore}
+                isLoading={isLoading}
             />
-        </div>
+            </div>
+        </ErrorBoundary>
     );
 }
 

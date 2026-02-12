@@ -6,6 +6,8 @@ const StoreStatus = ({ status }) => {
         Provisioning: "bg-amber-500/10 text-amber-500 border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]",
         Ready: "bg-emerald-500/10 text-emerald-500 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]",
         Failed: "bg-red-500/10 text-red-500 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]",
+        Deleting: "bg-slate-500/10 text-slate-500 border-slate-500/20 shadow-[0_0_10px_rgba(148,163,184,0.1)]",
+        DeletionFailed: "bg-red-500/10 text-red-500 border-red-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]",
     };
 
     const statusStyle = styles[status] || "bg-slate-500/10 text-slate-500";
@@ -13,13 +15,19 @@ const StoreStatus = ({ status }) => {
     return (
         <div className={`px-2.5 py-1 rounded-full text-xs font-semibold border flex items-center gap-1.5 ${statusStyle}`}>
             {status === 'Provisioning' && <RefreshCw className="w-3 h-3 animate-spin" />}
+            {status === 'Deleting' && <RefreshCw className="w-3 h-3 animate-spin" />}
             {status === 'Ready' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />}
+            {status === 'Failed' && <div className="w-1.5 h-1.5 rounded-full bg-red-500" />}
+            {status === 'DeletionFailed' && <div className="w-1.5 h-1.5 rounded-full bg-red-500" />}
             {status}
         </div>
     );
 };
 
-const StoreCard = ({ store, onDelete }) => {
+const StoreCard = ({ store, onDelete, isLoading }) => {
+    const isDeleting = store.status === 'Deleting';
+    const canDelete = !isDeleting && store.status !== 'Deleting';
+    
     return (
         <div className="glass-card rounded-2xl p-6 group flex flex-col h-full relative overflow-hidden">
             {/* Gradient Orb */}
@@ -56,6 +64,16 @@ const StoreCard = ({ store, onDelete }) => {
                 </div>
             </div>
 
+            {/* Error Message Display */}
+            {store.error_message && (
+                <div className="relative z-10 mb-4">
+                    <p className="text-sm font-medium text-red-400 mb-1">Error:</p>
+                    <div className="text-xs text-red-300 bg-red-500/10 p-2 rounded border border-red-500/20">
+                        {store.error_message}
+                    </div>
+                </div>
+            )}
+
             <div className="relative z-10 mb-4">
                 <p className="text-sm font-medium text-slate-400 mb-1">Products:</p>
                 <div className="text-sm text-white">
@@ -77,18 +95,53 @@ const StoreCard = ({ store, onDelete }) => {
                     </a>
                 )}
 
-                <button
-                    onClick={() => onDelete(store.id)}
-                    className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm font-medium border border-transparent hover:border-red-500/10"
-                >
-                    Delete <Trash2 className="w-4 h-4" />
-                </button>
+                {store.status === 'Failed' && (
+                    <button
+                        onClick={() => onDelete(store.id)}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all text-sm font-medium border border-red-500/20"
+                    >
+                        Retry Deployment <RefreshCw className="w-4 h-4" />
+                    </button>
+                )}
+
+                {store.status === 'DeletionFailed' && (
+                    <button
+                        onClick={() => onDelete(store.id)}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all text-sm font-medium border border-red-500/20"
+                    >
+                        Retry Deletion <RefreshCw className="w-4 h-4" />
+                    </button>
+                )}
+
+                {canDelete && (
+                    <button
+                        onClick={() => onDelete(store.id)}
+                        disabled={isLoading}
+                        className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all text-sm font-medium border border-transparent hover:border-red-500/10 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Delete <Trash2 className="w-4 h-4" />
+                    </button>
+                )}
             </div>
         </div>
     );
 };
 
-export default function StoreList({ stores, onDelete }) {
+export default function StoreList({ stores, onDelete, isLoading }) {
+    if (isLoading && stores.length === 0) {
+        return (
+            <div className="text-center py-24 glass-panel rounded-3xl border-dashed border-slate-700/50">
+                <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-slate-800/50 flex items-center justify-center">
+                    <RefreshCw className="w-10 h-10 text-slate-600 animate-spin" />
+                </div>
+                <h3 className="text-xl font-bold text-white mb-2">Loading stores...</h3>
+                <p className="text-slate-400 max-w-sm mx-auto">
+                    Fetching your store deployments.
+                </p>
+            </div>
+        );
+    }
+
     if (stores.length === 0) {
         return (
             <div className="text-center py-24 glass-panel rounded-3xl border-dashed border-slate-700/50">
@@ -106,7 +159,7 @@ export default function StoreList({ stores, onDelete }) {
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {stores.map(store => (
-                <StoreCard key={store.id} store={store} onDelete={onDelete} />
+                <StoreCard key={store.id} store={store} onDelete={onDelete} isLoading={isLoading} />
             ))}
         </div>
     );

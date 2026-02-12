@@ -1,11 +1,14 @@
 package orchestrator
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"log"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 	"urumi-backend/models"
 )
 
@@ -48,9 +51,15 @@ func ProvisionStore(store models.Store) error {
 
 	releaseName := store.Namespace
 
-	// Generate Random Passwords
-	rootPass := generatePassword(16)
-	dbPass := generatePassword(16)
+	// Generate secure random passwords
+	rootPass, err := generateSecurePassword(16)
+	if err != nil {
+		return fmt.Errorf("failed to generate root password: %w", err)
+	}
+	dbPass, err := generateSecurePassword(16)
+	if err != nil {
+		return fmt.Errorf("failed to generate database password: %w", err)
+	}
 	// For demo purposes, we set a known admin password so the user can login
 	wpInternalPass := "password123"
 
@@ -84,24 +93,47 @@ func ProvisionStore(store models.Store) error {
 	// The WordPress deployment reads from .Values.mariadb.auth.password.
 	// So just setting mariadb.auth.password should work for both.
 
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		fmt.Printf("Error provisioning store %s: %s\nOutput: %s\n", store.ID, err, string(output))
-		return err
+	log.Printf("Executing helm command for store %s: %s", store.ID, cmd.String())
+	
+	// Set timeout and prevent hanging
+	cmd.Start()
+	
+	// Create a channel to receive completion signal
+	done := make(chan error, 1)
+	
+	// Wait for command to complete in goroutine
+	go func() {
+		done <- cmd.Wait()
+	}()
+	
+	// Wait for completion or timeout
+	select {
+	case err := <-done:
+		output, _ := cmd.CombinedOutput()
+		if err != nil {
+			log.Printf("Error provisioning store %s: %s\nOutput: %s\n", store.ID, err, string(output))
+			return fmt.Errorf("helm install failed: %w", err)
+		}
+		log.Printf("Successfully provisioned store %s at %s\nOutput: %s", store.ID, host, string(output))
+		return nil
+	case <-time.After(5 * time.Minute):
+		// Kill the process if it hangs
+		cmd.Process.Kill()
+		return fmt.Errorf("helm install timed out after 5 minutes for store %s", store.ID)
 	}
-
-	fmt.Printf("Successfully provisioned store %s at %s\n", store.ID, host)
-	return nil
 }
 
-func generatePassword(length int) string {
-	// fast and dirty random string
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+func generateSecurePassword(length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*"
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[num.Int64()]
 	}
-	return string(b)
+	return string(b), nil
 }
 
 // DeleteStore runs the helm uninstall command
@@ -113,23 +145,31 @@ func DeleteStore(store models.Store) error {
 		kubeconfig = filepath.Join(home, ".kube", "config")
 	}
 
+	log.Printf("Starting deletion of store %s (%s)", store.ID, store.Name)
+
+	// First, try to uninstall the helm release
 	cmd := exec.Command("helm", "uninstall", store.Namespace, "--namespace", store.Namespace, "--kubeconfig", kubeconfig)
-
-	// Also delete namespace? helm uninstall doesn't delete namespace usually.
-	// Let's delete the namespace directly.
-
+	log.Printf("Executing helm uninstall for store %s: %s", store.ID, cmd.String())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Printf("Error uninstalling helm release %s: %s\nOutput: %s\n", store.ID, err, string(output))
-		// continue to try deleting namespace
+		log.Printf("Error uninstalling helm release %s: %s\nOutput: %s\n", store.ID, err, string(output))
+		// Continue to try deleting namespace anyway
+	} else {
+		log.Printf("Successfully uninstalled helm release for store %s", store.ID)
 	}
 
+	// Wait a moment for resources to be cleaned up
+	time.Sleep(2 * time.Second)
+
+	// Delete the namespace
 	cmdNs := exec.Command("kubectl", "delete", "namespace", store.Namespace, "--kubeconfig", kubeconfig)
+	log.Printf("Executing kubectl delete namespace for store %s: %s", store.ID, cmdNs.String())
 	outputNs, errNs := cmdNs.CombinedOutput()
 	if errNs != nil {
-		fmt.Printf("Error deleting namespace %s: %s\nOutput: %s\n", store.Namespace, errNs, string(outputNs))
-		return errNs
+		log.Printf("Error deleting namespace %s: %s\nOutput: %s\n", store.Namespace, errNs, string(outputNs))
+		return fmt.Errorf("failed to delete namespace: %w", errNs)
 	}
 
+	log.Printf("Successfully deleted namespace %s for store %s", store.Namespace, store.ID)
 	return nil
 }

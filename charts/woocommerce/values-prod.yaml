@@ -1,12 +1,18 @@
-# values-prod.yaml
+# values-prod.yaml - Production configuration
 ingress:
   enabled: true
   className: "traefik" # k3s default
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
   hosts:
     - host: store.example.com
       paths:
         - path: /
           pathType: Prefix
+  tls:
+    - secretName: store-tls
+      hosts:
+        - store.example.com
 
 persistence:
   storageClass: "local-path" # k3s default
@@ -15,3 +21,59 @@ mariadb:
   primary:
     persistence:
       storageClass: "local-path"
+  auth:
+    # These will be overridden by the orchestrator
+    rootPassword: ""
+    password: ""
+    database: wordpress
+
+# Production-ready image tags
+image:
+  repository: wordpress
+  tag: "6.4.3"  # Pin specific version for production
+  pullPolicy: IfNotPresent
+
+# Resource limits for production
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Health checks
+livenessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# Security context
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 33  # www-data
+  fsGroup: 33
+
+# WordPress configuration
+wordpress:
+  extraConfig:
+    # Production optimizations
+    - |
+      define('WP_DEBUG', false);
+      define('WP_DEBUG_LOG', false);
+      define('WP_DEBUG_DISPLAY', false);
+      define('WP_MEMORY_LIMIT', '256M');
+      define('WP_MAX_MEMORY_LIMIT', '512M');
